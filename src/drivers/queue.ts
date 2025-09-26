@@ -335,5 +335,128 @@ export default defineDriver<QueueDriverOptions, QueueContext>((opts) => {
     watch(callback: WatchCallback): Promise<Unwatch> | Unwatch {
       return driver.watch ? driver.watch(callback) : () => {};
     },
+
+    // Synchronous methods - flush queue first then call underlying driver
+    hasItemSync(key, opts = {}) {
+      // For sync operations, check queue first
+      const queued = context.queue.get(key);
+      if (queued) {
+        return queued.type === "set";
+      }
+      if (!driver.hasItemSync) {
+        throw new Error(
+          "Underlying driver does not support synchronous hasItem operation"
+        );
+      }
+      return driver.hasItemSync(key, opts);
+    },
+
+    getItemSync(key, opts = {}) {
+      // For sync operations, check queue first
+      const queued = context.queue.get(key);
+      if (queued) {
+        return queued.type === "set" ? queued.value || null : null;
+      }
+      if (!driver.getItemSync) {
+        throw new Error(
+          "Underlying driver does not support synchronous getItem operation"
+        );
+      }
+      return driver.getItemSync(key, opts);
+    },
+
+    getItemRawSync(key, opts = {}) {
+      // For sync operations, check queue first
+      const queued = context.queue.get(key);
+      if (queued) {
+        return queued.type === "set" ? queued.value || null : null;
+      }
+      if (!driver.getItemRawSync) {
+        throw new Error(
+          "Underlying driver does not support synchronous getItemRaw operation"
+        );
+      }
+      return driver.getItemRawSync(key, opts);
+    },
+
+    setItemSync(key, value, opts = {}) {
+      if (!driver.setItemSync) {
+        throw new Error(
+          "Underlying driver does not support synchronous setItem operation"
+        );
+      }
+      // For sync operations, bypass queue and write directly
+      return driver.setItemSync(key, value, opts);
+    },
+
+    setItemRawSync(key, value, opts = {}) {
+      if (!driver.setItemRawSync) {
+        throw new Error(
+          "Underlying driver does not support synchronous setItemRaw operation"
+        );
+      }
+      // For sync operations, bypass queue and write directly
+      return driver.setItemRawSync(key, value, opts);
+    },
+
+    removeItemSync(key, opts = {}) {
+      if (!driver.removeItemSync) {
+        throw new Error(
+          "Underlying driver does not support synchronous removeItem operation"
+        );
+      }
+      // For sync operations, bypass queue and remove directly
+      return driver.removeItemSync(key, opts);
+    },
+
+    getMetaSync(key, opts = {}) {
+      if (!driver.getMetaSync) {
+        throw new Error(
+          "Underlying driver does not support synchronous getMeta operation"
+        );
+      }
+      return driver.getMetaSync(key, opts);
+    },
+
+    getKeysSync(base = "", opts = {}) {
+      if (!driver.getKeysSync) {
+        throw new Error(
+          "Underlying driver does not support synchronous getKeys operation"
+        );
+      }
+      // For sync operations, we need to account for queued operations
+      const driverKeys = driver.getKeysSync(base, opts);
+      const queuedKeys = [...context.queue.keys()].filter(
+        (key) => key.startsWith(base) && context.queue.get(key)?.type === "set"
+      );
+
+      const removedKeys = [...context.queue.keys()].filter(
+        (key) =>
+          key.startsWith(base) && context.queue.get(key)?.type === "remove"
+      );
+
+      const allKeys = new Set([...driverKeys, ...queuedKeys]);
+      for (const key of removedKeys) {
+        allKeys.delete(key);
+      }
+
+      return [...allKeys];
+    },
+
+    clearSync(base = "", opts = {}) {
+      if (!driver.clearSync) {
+        throw new Error(
+          "Underlying driver does not support synchronous clear operation"
+        );
+      }
+      // For sync operations, clear any queued items for this base and call underlying driver
+      const keysToRemove = [...context.queue.keys()].filter((key) =>
+        key.startsWith(base)
+      );
+      for (const key of keysToRemove) {
+        context.queue.delete(key);
+      }
+      return driver.clearSync(base, opts);
+    },
   };
 });

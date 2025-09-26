@@ -76,6 +76,29 @@ export interface Driver<OptionsT = any, InstanceT = any> {
   clear?: (base: string, opts: TransactionOptions) => MaybePromise<void>;
   dispose?: () => MaybePromise<void>;
   watch?: (callback: WatchCallback) => MaybePromise<Unwatch>;
+
+  // Synchronous API methods
+  hasItemSync?: (key: string, opts: TransactionOptions) => boolean;
+  getItemSync?: (key: string, opts?: TransactionOptions) => StorageValue;
+  /** @experimental */
+  getItemsSync?: (
+    items: { key: string; options?: TransactionOptions }[],
+    commonOptions?: TransactionOptions
+  ) => { key: string; value: StorageValue }[];
+  /** @experimental */
+  getItemRawSync?: (key: string, opts: TransactionOptions) => unknown;
+  setItemSync?: (key: string, value: string, opts: TransactionOptions) => void;
+  /** @experimental */
+  setItemsSync?: (
+    items: { key: string; value: string; options?: TransactionOptions }[],
+    commonOptions?: TransactionOptions
+  ) => void;
+  /** @experimental */
+  setItemRawSync?: (key: string, value: any, opts: TransactionOptions) => void;
+  removeItemSync?: (key: string, opts: TransactionOptions) => void;
+  getMetaSync?: (key: string, opts: TransactionOptions) => StorageMeta | null;
+  getKeysSync?: (base: string, opts: GetKeysOptions) => string[];
+  clearSync?: (base: string, opts: TransactionOptions) => void;
 }
 
 type StorageDefinition = {
@@ -269,6 +292,133 @@ export interface Storage<T extends StorageValue = StorageValue> {
   has: Storage<T>["hasItem"];
   del: Storage<T>["removeItem"];
   remove: Storage<T>["removeItem"];
+
+  // Synchronous API methods
+  hasItemSync<
+    U extends Extract<T, StorageDefinition>,
+    K extends keyof StorageItemMap<U>,
+  >(
+    key: K,
+    opts?: TransactionOptions
+  ): boolean;
+  hasItemSync(key: string, opts?: TransactionOptions): boolean;
+
+  getItemSync<
+    U extends Extract<T, StorageDefinition>,
+    K extends string & keyof StorageItemMap<U>,
+  >(
+    key: K,
+    ops?: TransactionOptions
+  ): StorageItemType<T, K> | null;
+  getItemSync<R = StorageItemType<T, string>>(
+    key: string,
+    opts?: TransactionOptions
+  ): R | null;
+
+  /** @experimental */
+  getItemsSync<
+    U extends Extract<T, StorageDefinition>,
+    K extends keyof StorageItemMap<U>,
+  >(
+    items: (K | { key: K; options?: TransactionOptions })[],
+    commonOptions?: TransactionOptions
+  ): { key: K; value: StorageItemType<T, K> | null }[];
+  getItemsSync<U extends StorageValue>(
+    items: T extends StorageDefinition
+      ? never
+      : (string | { key: string; options?: TransactionOptions })[],
+    commonOptions?: TransactionOptions
+  ): { key: string; value: U | null }[];
+
+  /** @experimental */
+  getItemRawSync: <T = any>(
+    key: string,
+    opts?: TransactionOptions
+  ) => MaybeDefined<T> | null;
+
+  setItemSync<
+    U extends Extract<T, StorageDefinition>,
+    K extends keyof StorageItemMap<U>,
+  >(
+    key: K,
+    value: StorageItemType<T, K>,
+    opts?: TransactionOptions
+  ): void;
+  setItemSync<U extends StorageValue>(
+    key: T extends StorageDefinition ? never : string,
+    value: T extends StorageDefinition ? never : U,
+    opts?: TransactionOptions
+  ): void;
+
+  /** @experimental */
+  setItemsSync<
+    U extends Extract<T, StorageDefinition>,
+    K extends keyof StorageItemMap<U>,
+  >(
+    items: {
+      key: K;
+      value: StorageItemType<T, K>;
+      options?: TransactionOptions;
+    }[],
+    commonOptions?: TransactionOptions
+  ): void;
+  setItemsSync<U extends StorageValue>(
+    items: T extends StorageDefinition
+      ? never
+      : { key: string; value: U; options?: TransactionOptions }[],
+    commonOptions?: TransactionOptions
+  ): void;
+
+  /** @experimental */
+  setItemRawSync: <T = any>(
+    key: string,
+    value: MaybeDefined<T>,
+    opts?: TransactionOptions
+  ) => void;
+
+  removeItemSync<
+    U extends Extract<T, StorageDefinition>,
+    K extends keyof StorageItemMap<U>,
+  >(
+    key: K,
+    opts?:
+      | (TransactionOptions & { removeMeta?: boolean })
+      | boolean /* legacy: removeMeta */
+  ): void;
+  removeItemSync(
+    key: string,
+    opts?:
+      | (TransactionOptions & { removeMeta?: boolean })
+      | boolean /* legacy: removeMeta */
+  ): void;
+
+  // Meta - sync versions
+  getMetaSync: (
+    key: string,
+    opts?:
+      | (TransactionOptions & { nativeOnly?: boolean })
+      | boolean /* legacy: nativeOnly */
+  ) => StorageMeta;
+  setMetaSync: (
+    key: string,
+    value: StorageMeta,
+    opts?: TransactionOptions
+  ) => void;
+  removeMetaSync: (key: string, opts?: TransactionOptions) => void;
+
+  // Keys - sync version
+  getKeysSync: (base?: string, opts?: GetKeysOptions) => string[];
+
+  // Utils - sync version
+  clearSync: (base?: string, opts?: TransactionOptions) => void;
+
+  // Sync aliases
+  keysSync: Storage["getKeysSync"];
+  getSync: Storage<T>["getItemSync"];
+  setSync: Storage<T>["setItemSync"];
+  hasSync: Storage<T>["hasItemSync"];
+  delSync: Storage<T>["removeItemSync"];
+  removeSync: Storage<T>["removeItemSync"];
 
   // migrate
   migrate: () => Promise<void>;

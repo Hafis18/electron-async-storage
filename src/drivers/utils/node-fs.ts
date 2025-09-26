@@ -1,4 +1,15 @@
-import { Dirent, existsSync, promises as fsPromises } from "node:fs";
+import {
+  Dirent,
+  existsSync,
+  promises as fsPromises,
+  readFileSync,
+  writeFileSync,
+  unlinkSync,
+  readdirSync,
+  mkdirSync,
+  rmdirSync,
+  statSync,
+} from "node:fs";
 import { resolve, dirname } from "node:path";
 
 function ignoreNotfound(err: any) {
@@ -90,4 +101,115 @@ export async function rmRecursive(dir: string) {
       }
     })
   );
+}
+
+// Synchronous versions
+export function syncWriteFile(
+  path: string,
+  data: Parameters<typeof writeFileSync>[1],
+  encoding?: BufferEncoding
+) {
+  syncEnsuredir(dirname(path));
+  return writeFileSync(path, data, encoding);
+}
+
+export function syncReadFile(path: string, encoding?: BufferEncoding) {
+  try {
+    return readFileSync(path, encoding);
+  } catch (err: any) {
+    const ignored = ignoreNotfound(err);
+    if (ignored === null) return null;
+    throw err;
+  }
+}
+
+export function syncStat(path: string) {
+  try {
+    return statSync(path);
+  } catch (err: any) {
+    const ignored = ignoreNotfound(err);
+    if (ignored === null) return null;
+    throw err;
+  }
+}
+
+export function syncUnlink(path: string) {
+  try {
+    return unlinkSync(path);
+  } catch (err: any) {
+    const ignored = ignoreNotfound(err);
+    if (ignored === null) return;
+    throw err;
+  }
+}
+
+export function syncReaddir(dir: string): Dirent[] {
+  try {
+    return readdirSync(dir, { withFileTypes: true });
+  } catch (err: any) {
+    const ignored = ignoreNotfound(err);
+    if (ignored === null) return [];
+    throw err;
+  }
+}
+
+export function syncEnsuredir(dir: string) {
+  if (existsSync(dir)) {
+    return;
+  }
+  try {
+    syncEnsuredir(dirname(dir));
+  } catch (err: any) {
+    ignoreExists(err);
+  }
+  try {
+    mkdirSync(dir);
+  } catch (err: any) {
+    ignoreExists(err);
+  }
+}
+
+export function syncReaddirRecursive(
+  dir: string,
+  ignore?: (p: string) => boolean,
+  maxDepth?: number
+): string[] {
+  if (ignore && ignore(dir)) {
+    return [];
+  }
+  const entries: Dirent[] = syncReaddir(dir);
+  const files: string[] = [];
+
+  for (const entry of entries) {
+    const entryPath = resolve(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (maxDepth === undefined || maxDepth > 0) {
+        const dirFiles = syncReaddirRecursive(
+          entryPath,
+          ignore,
+          maxDepth === undefined ? undefined : maxDepth - 1
+        );
+        files.push(...dirFiles.map((f) => entry.name + "/" + f));
+      }
+    } else {
+      if (!(ignore && ignore(entry.name))) {
+        files.push(entry.name);
+      }
+    }
+  }
+
+  return files;
+}
+
+export function syncRmRecursive(dir: string) {
+  const entries = syncReaddir(dir);
+  for (const entry of entries) {
+    const entryPath = resolve(dir, entry.name);
+    if (entry.isDirectory()) {
+      syncRmRecursive(entryPath);
+      rmdirSync(entryPath);
+    } else {
+      unlinkSync(entryPath);
+    }
+  }
 }

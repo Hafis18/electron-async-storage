@@ -35,5 +35,31 @@ export default defineDriver<void, Map<string, any>>(() => {
     dispose() {
       data.clear();
     },
+
+    // Synchronous API methods
+    hasItemSync(key) {
+      return data.has(key);
+    },
+    getItemSync(key) {
+      return data.get(key) ?? null;
+    },
+    getItemRawSync(key) {
+      return data.get(key) ?? null;
+    },
+    setItemSync(key, value) {
+      data.set(key, value);
+    },
+    setItemRawSync(key, value) {
+      data.set(key, value);
+    },
+    removeItemSync(key) {
+      data.delete(key);
+    },
+    getKeysSync() {
+      return [...data.keys()];
+    },
+    clearSync() {
+      data.clear();
+    },
   };
 });

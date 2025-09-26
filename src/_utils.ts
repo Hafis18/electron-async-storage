@@ -20,6 +20,22 @@ export function asyncCall<T extends (...arguments_: any) => any>(
   }
 }
 
+export function syncCall<T extends (...arguments_: any) => any>(
+  function_: T | undefined,
+  ...arguments_: any[]
+): ReturnType<T> {
+  if (!function_) {
+    throw new Error("Synchronous operation not supported by this driver");
+  }
+  const result = function_(...arguments_);
+  if (result && typeof result.then === "function") {
+    throw new Error(
+      "Driver returned Promise from sync method - sync operation not supported"
+    );
+  }
+  return result;
+}
+
 function isPrimitive(value: any) {
   const type = typeof value;
   return value === null || (type !== "object" && type !== "function");

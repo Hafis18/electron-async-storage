@@ -12,6 +12,7 @@ import type {
 import memory from "./drivers/memory";
 import {
   asyncCall,
+  syncCall,
   deserializeRaw,
   serializeRaw,
   stringify,
@@ -173,6 +174,48 @@ export function createStorage<T extends StorageValue>(
     return Promise.all([...batches.values()].map((batch) => cb(batch))).then(
       (r) => r.flat()
     );
+  };
+
+  const runBatchSync = (
+    items: (
+      | string
+      | { key: string; value?: StorageValue; options?: TransactionOptions }
+    )[],
+    commonOptions: undefined | TransactionOptions,
+    cb: (batch: BatchItem) => any
+  ) => {
+    const batches = new Map<string /* mount base */, BatchItem>();
+    const getBatch = (mount: ReturnType<typeof getMount>) => {
+      let batch = batches.get(mount.base);
+      if (!batch) {
+        batch = {
+          driver: mount.driver,
+          base: mount.base,
+          items: [],
+        };
+        batches.set(mount.base, batch);
+      }
+      return batch;
+    };
+
+    for (const item of items) {
+      const isStringItem = typeof item === "string";
+      const key = normalizeKey(isStringItem ? item : item.key);
+      const value = isStringItem ? undefined : item.value;
+      const options =
+        isStringItem || !item.options
+          ? commonOptions
+          : { ...commonOptions, ...item.options };
+      const mount = getMount(key);
+      getBatch(mount).items.push({
+        key,
+        value,
+        relativeKey: mount.relativeKey,
+        options,
+      });
+    }
+
+    return [...batches.values()].flatMap((batch) => cb(batch));
   };
 
   const storage: Storage = {
@@ -478,6 +521,237 @@ export function createStorage<T extends StorageValue>(
         base: m.mountpoint,
       }));
     },
+    // Synchronous API methods
+    hasItemSync(key: string, opts = {}) {
+      key = normalizeKey(key);
+      const { relativeKey, driver } = getMount(key);
+      return syncCall(driver.hasItemSync, relativeKey, opts);
+    },
+    getItemSync(key: string, opts = {}) {
+      key = normalizeKey(key);
+      const { relativeKey, driver } = getMount(key);
+      const value = syncCall(driver.getItemSync, relativeKey, opts);
+      return safeSuperjsonParse(value) as T;
+    },
+    getItemsSync(items: any, commonOptions: any = {}) {
+      return runBatchSync(items, commonOptions, (batch) => {
+        if (batch.driver.getItemsSync) {
+          const result = syncCall(
+            batch.driver.getItemsSync,
+            batch.items.map((item) => ({
+              key: item.relativeKey,
+              options: item.options,
+            })),
+            commonOptions
+          );
+          return result.map((item) => ({
+            key: joinKeys(batch.base, item.key),
+            value: safeSuperjsonParse(item.value) as T,
+          }));
+        }
+        return batch.items.map((item) => {
+          const value = syncCall(
+            batch.driver.getItemSync,
+            item.relativeKey,
+            item.options
+          );
+          return {
+            key: item.key,
+            value: safeSuperjsonParse(value) as T,
+          };
+        });
+      });
+    },
+    getItemRawSync(key, opts = {}) {
+      key = normalizeKey(key);
+      const { relativeKey, driver } = getMount(key);
+      if (driver.getItemRawSync) {
+        return syncCall(driver.getItemRawSync, relativeKey, opts);
+      }
+      const value = syncCall(driver.getItemSync, relativeKey, opts);
+      return deserializeRaw(value);
+    },
+    setItemSync(key: string, value: T, opts = {}) {
+      if (value === undefined) {
+        return storage.removeItemSync(key);
+      }
+      key = normalizeKey(key);
+      const { relativeKey, driver } = getMount(key);
+      if (!driver.setItemSync) {
+        throw new Error(
+          "Driver does not support synchronous setItem operation"
+        );
+      }
+      syncCall(driver.setItemSync, relativeKey, stringify(value), opts);
+      if (!driver.watch) {
+        onChange("update", key);
+      }
+    },
+    setItemsSync(items: any, commonOptions?: any) {
+      runBatchSync(items, commonOptions, (batch) => {
+        if (batch.driver.setItemsSync) {
+          return syncCall(
+            batch.driver.setItemsSync,
+            batch.items.map((item) => ({
+              key: item.relativeKey,
+              value: stringify(item.value),
+              options: item.options,
+            })),
+            commonOptions
+          );
+        }
+        if (!batch.driver.setItemSync) {
+          throw new Error(
+            "Driver does not support synchronous setItem operation"
+          );
+        }
+        for (const item of batch.items) {
+          syncCall(
+            batch.driver.setItemSync!,
+            item.relativeKey,
+            stringify(item.value),
+            item.options
+          );
+        }
+      });
+    },
+    setItemRawSync(key, value, opts = {}) {
+      if (value === undefined) {
+        return storage.removeItemSync(key, opts);
+      }
+      key = normalizeKey(key);
+      const { relativeKey, driver } = getMount(key);
+      if (driver.setItemRawSync) {
+        syncCall(driver.setItemRawSync, relativeKey, value, opts);
+      } else if (driver.setItemSync) {
+        syncCall(driver.setItemSync, relativeKey, serializeRaw(value), opts);
+      } else {
+        throw new Error(
+          "Driver does not support synchronous setItem operation"
+        );
+      }
+      if (!driver.watch) {
+        onChange("update", key);
+      }
+    },
+    removeItemSync(
+      key: string,
+      opts:
+        | (TransactionOptions & { removeMeta?: boolean })
+        | boolean /* legacy: removeMeta */ = {}
+    ) {
+      // TODO: Remove in next major version
+      if (typeof opts === "boolean") {
+        opts = { removeMeta: opts };
+      }
+      key = normalizeKey(key);
+      const { relativeKey, driver } = getMount(key);
+      if (!driver.removeItemSync) {
+        throw new Error(
+          "Driver does not support synchronous removeItem operation"
+        );
+      }
+      syncCall(driver.removeItemSync, relativeKey, opts);
+      if (opts.removeMeta || opts.removeMata /* #281 */) {
+        syncCall(driver.removeItemSync, relativeKey + "$", opts);
+      }
+      if (!driver.watch) {
+        onChange("remove", key);
+      }
+    },
+    // Meta - sync
+    getMetaSync(key, opts = {}) {
+      // TODO: Remove in next major version
+      if (typeof opts === "boolean") {
+        opts = { nativeOnly: opts };
+      }
+      key = normalizeKey(key);
+      const { relativeKey, driver } = getMount(key);
+      const meta = Object.create(null);
+      if (driver.getMetaSync) {
+        Object.assign(meta, syncCall(driver.getMetaSync, relativeKey, opts));
+      }
+      if (!opts.nativeOnly) {
+        const value = syncCall(driver.getItemSync, relativeKey + "$", opts);
+        const parsedValue = safeSuperjsonParse(value) as any;
+        if (parsedValue && typeof parsedValue === "object") {
+          // TODO: Support date by destr?
+          if (typeof parsedValue.atime === "string") {
+            parsedValue.atime = new Date(parsedValue.atime);
+          }
+          if (typeof parsedValue.mtime === "string") {
+            parsedValue.mtime = new Date(parsedValue.mtime);
+          }
+          Object.assign(meta, parsedValue);
+        }
+      }
+      return meta;
+    },
+    setMetaSync(key: string, value: any, opts = {}) {
+      return storage.setItemSync(key + "$", value, opts);
+    },
+    removeMetaSync(key: string, opts = {}) {
+      return storage.removeItemSync(key + "$", opts);
+    },
+    // Keys - sync
+    getKeysSync(base, opts = {}) {
+      base = normalizeBaseKey(base);
+      const mounts = getMounts(base, true);
+      let maskedMounts: string[] = [];
+      const allKeys = [];
+      let allMountsSupportMaxDepth = true;
+      for (const mount of mounts) {
+        if (!mount.driver.flags?.maxDepth) {
+          allMountsSupportMaxDepth = false;
+        }
+        const rawKeys = syncCall(
+          mount.driver.getKeysSync,
+          mount.relativeBase,
+          opts
+        );
+        for (const key of rawKeys) {
+          const fullKey = mount.mountpoint + normalizeKey(key);
+          if (!maskedMounts.some((p) => fullKey.startsWith(p))) {
+            allKeys.push(fullKey);
+          }
+        }
+        maskedMounts = [
+          mount.mountpoint,
+          ...maskedMounts.filter((p) => !p.startsWith(mount.mountpoint)),
+        ];
+      }
+      const shouldFilterByDepth =
+        opts.maxDepth !== undefined && !allMountsSupportMaxDepth;
+      return allKeys.filter(
+        (key) =>
+          (!shouldFilterByDepth || filterKeyByDepth(key, opts.maxDepth)) &&
+          filterKeyByBase(key, base)
+      );
+    },
+    // Utils - sync
+    clearSync(base, opts = {}) {
+      base = normalizeBaseKey(base);
+      for (const m of getMounts(base, false)) {
+        if (m.driver.clearSync) {
+          syncCall(m.driver.clearSync, m.relativeBase, opts);
+        } else if (m.driver.removeItemSync) {
+          // Fallback to remove all keys if clear not implemented
+          const keys = syncCall(
+            m.driver.getKeysSync,
+            m.relativeBase || "",
+            opts
+          );
+          for (const key of keys) {
+            syncCall(m.driver.removeItemSync!, key, opts);
+          }
+        } else {
+          throw new Error(
+            "Driver does not support synchronous clear operation"
+          );
+        }
+      }
+    },
+
     // Aliases
     keys: (base, opts = {}) => storage.getKeys(base, opts),
     get: (key: string, opts = {}) => storage.getItem(key, opts),
@@ -486,6 +760,15 @@ export function createStorage<T extends StorageValue>(
     has: (key: string, opts = {}) => storage.hasItem(key, opts),
     del: (key: string, opts = {}) => storage.removeItem(key, opts),
     remove: (key: string, opts = {}) => storage.removeItem(key, opts),
+
+    // Sync aliases
+    keysSync: (base, opts = {}) => storage.getKeysSync(base, opts),
+    getSync: (key: string, opts = {}) => storage.getItemSync(key, opts),
+    setSync: (key: string, value: T, opts = {}) =>
+      storage.setItemSync(key, value, opts),
+    hasSync: (key: string, opts = {}) => storage.hasItemSync(key, opts),
+    delSync: (key: string, opts = {}) => storage.removeItemSync(key, opts),
+    removeSync: (key: string, opts = {}) => storage.removeItemSync(key, opts),
 
     // Internal bypass methods for library use
     _setItemInternal: async (key: string, value: any, opts = {}) => {

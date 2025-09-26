@@ -47,11 +47,11 @@ The storage core (`src/storage.ts`) is the central orchestrator that manages all
 
 ```typescript
 interface StorageCTX {
-  mounts: Record<string, Driver>         // Mounted drivers by base path
-  mountpoints: string[]                  // Sorted mount points (longest first)
-  watching: boolean                      // Global watch state
-  unwatch: Record<string, Unwatch>       // Cleanup functions per mount
-  watchListeners: WatchCallback[]        // Registered watch callbacks
+  mounts: Record<string, Driver>; // Mounted drivers by base path
+  mountpoints: string[]; // Sorted mount points (longest first)
+  watching: boolean; // Global watch state
+  unwatch: Record<string, Unwatch>; // Cleanup functions per mount
+  watchListeners: WatchCallback[]; // Registered watch callbacks
 }
 ```
 
@@ -67,20 +67,21 @@ function getMount(key: string): MountInfo {
       return {
         base,
         relativeKey: key.slice(base.length),
-        driver: context.mounts[base]
-      }
+        driver: context.mounts[base],
+      };
     }
   }
   // Fallback to root mount
   return {
     base: "",
     relativeKey: key,
-    driver: context.mounts[""]
-  }
+    driver: context.mounts[""],
+  };
 }
 ```
 
 This ensures that more specific mounts take precedence over general ones:
+
 - `cache:api:v1` → mounted at `cache:api:`
 - `cache:user` → mounted at `cache:`
 - `other:data` → mounted at `""` (root)
@@ -130,17 +131,17 @@ mount(base: string, driver: Driver) {
 ### Mount Examples
 
 ```typescript
-const storage = createStorage()
+const storage = createStorage();
 
 // Mount different drivers for different purposes
-storage.mount('cache', memoryDriver())           // cache:* → memory
-storage.mount('config', fsDriver({ base: './config' }))  // config:* → filesystem
-storage.mount('config:secure', encryptedDriver())        // config:secure:* → encrypted
+storage.mount("cache", memoryDriver()); // cache:* → memory
+storage.mount("config", fsDriver({ base: "./config" })); // config:* → filesystem
+storage.mount("config:secure", encryptedDriver()); // config:secure:* → encrypted
 
 // Operations are automatically routed:
-await storage.setItem('cache:user-session', data)    // → memory driver
-await storage.setItem('config:app-settings', settings)  // → filesystem driver
-await storage.setItem('config:secure:api-keys', keys)   // → encrypted driver
+await storage.setItem("cache:user-session", data); // → memory driver
+await storage.setItem("config:app-settings", settings); // → filesystem driver
+await storage.setItem("config:secure:api-keys", keys); // → encrypted driver
 ```
 
 ## Key Normalization and Routing
@@ -151,20 +152,21 @@ Keys undergo normalization to ensure consistency:
 
 ```typescript
 function normalizeKey(key?: string): string {
-  if (!key) return ""
+  if (!key) return "";
 
-  return key
-    .split("?")[0]                    // Remove query parameters
-    ?.replace(/[/\\]/g, ":")         // Convert separators to colons
-    .replace(/:+/g, ":")             // Collapse multiple colons
-    .replace(/^:|:$/g, "")           // Remove leading/trailing colons
-    || ""
+  return (
+    key
+      .split("?")[0] // Remove query parameters
+      ?.replace(/[/\\]/g, ":") // Convert separators to colons
+      .replace(/:+/g, ":") // Collapse multiple colons
+      .replace(/^:|:$/g, "") || "" // Remove leading/trailing colons
+  );
 }
 
 // Examples:
-normalizeKey("user/profile?v=1")     // → "user:profile"
-normalizeKey("\\config\\\\app\\")    // → "config:app"
-normalizeKey(":::cache:::data:::")   // → "cache:data"
+normalizeKey("user/profile?v=1"); // → "user:profile"
+normalizeKey("\\config\\\\app\\"); // → "config:app"
+normalizeKey(":::cache:::data:::"); // → "cache:data"
 ```
 
 ### Base Key Handling
@@ -173,13 +175,13 @@ Base keys get special treatment for mount operations:
 
 ```typescript
 function normalizeBaseKey(base?: string): string {
-  base = normalizeKey(base)
-  return base ? base + ":" : ""
+  base = normalizeKey(base);
+  return base ? base + ":" : "";
 }
 
 // This ensures proper mount behavior:
-storage.mount("config", driver)
-await storage.setItem("app-settings", data)  // Stored as "config:app-settings"
+storage.mount("config", driver);
+await storage.setItem("app-settings", data); // Stored as "config:app-settings"
 ```
 
 ### Key Filtering and Depth Control
@@ -188,21 +190,21 @@ The system supports sophisticated key filtering:
 
 ```typescript
 function filterKeyByDepth(key: string, depth: number | undefined): boolean {
-  if (depth === undefined) return true
+  if (depth === undefined) return true;
 
-  let substrCount = 0
-  let index = key.indexOf(":")
+  let substrCount = 0;
+  let index = key.indexOf(":");
 
   while (index > -1) {
-    substrCount++
-    index = key.indexOf(":", index + 1)
+    substrCount++;
+    index = key.indexOf(":", index + 1);
   }
 
-  return substrCount <= depth
+  return substrCount <= depth;
 }
 
 // Usage:
-await storage.getKeys("config", { maxDepth: 1 })
+await storage.getKeys("config", { maxDepth: 1 });
 // Returns only "config:app", not "config:app:theme" (depth 2)
 ```
 
@@ -223,20 +225,28 @@ The serialization engine handles complex JavaScript objects using superjson.
 ```typescript
 function stringify(value: any): string {
   // Check if value is superjson-compatible
-  if (isPrimitive(value) || isPureObject(value) || Array.isArray(value) ||
-      value instanceof Date || value instanceof RegExp ||
-      value instanceof Set || value instanceof Map ||
-      value instanceof Error || value instanceof URL ||
-      value === undefined || typeof value === "bigint") {
-    return superjson.stringify(value)
+  if (
+    isPrimitive(value) ||
+    isPureObject(value) ||
+    Array.isArray(value) ||
+    value instanceof Date ||
+    value instanceof RegExp ||
+    value instanceof Set ||
+    value instanceof Map ||
+    value instanceof Error ||
+    value instanceof URL ||
+    value === undefined ||
+    typeof value === "bigint"
+  ) {
+    return superjson.stringify(value);
   }
 
   // Fallback to toJSON method
   if (typeof value.toJSON === "function") {
-    return stringify(value.toJSON())
+    return stringify(value.toJSON());
   }
 
-  throw new Error("[electron-async-storage] Cannot stringify value!")
+  throw new Error("[electron-async-storage] Cannot stringify value!");
 }
 ```
 
@@ -244,13 +254,13 @@ function stringify(value: any): string {
 
 ```typescript
 function safeSuperjsonParse(value: any): any {
-  if (typeof value !== "string") return value
-  if (value === "" || value === "{}") return null
+  if (typeof value !== "string") return value;
+  if (value === "" || value === "{}") return null;
 
   try {
-    return superjson.parse(value)
+    return superjson.parse(value);
   } catch {
-    return null  // Safe fallback for corrupted data
+    return null; // Safe fallback for corrupted data
   }
 }
 ```
@@ -260,17 +270,17 @@ function safeSuperjsonParse(value: any): any {
 For binary data and custom serialization:
 
 ```typescript
-const BASE64_PREFIX = "base64:"
+const BASE64_PREFIX = "base64:";
 
 function serializeRaw(value: any): string {
-  if (typeof value === "string") return value
-  return BASE64_PREFIX + base64Encode(value)
+  if (typeof value === "string") return value;
+  return BASE64_PREFIX + base64Encode(value);
 }
 
 function deserializeRaw(value: any): any {
-  if (typeof value !== "string") return value
-  if (!value.startsWith(BASE64_PREFIX)) return value
-  return base64Decode(value.slice(BASE64_PREFIX.length))
+  if (typeof value !== "string") return value;
+  if (!value.startsWith(BASE64_PREFIX)) return value;
+  return base64Decode(value.slice(BASE64_PREFIX.length));
 }
 ```
 
@@ -282,45 +292,52 @@ Batch operations provide significant performance improvements by reducing driver
 
 ```typescript
 type BatchItem = {
-  driver: Driver
-  base: string
+  driver: Driver;
+  base: string;
   items: Array<{
-    key: string
-    relativeKey: string
-    value?: StorageValue
-    options?: TransactionOptions
-  }>
-}
+    key: string;
+    relativeKey: string;
+    value?: StorageValue;
+    options?: TransactionOptions;
+  }>;
+};
 
 function runBatch(
-  items: (string | { key: string; value?: StorageValue; options?: TransactionOptions })[],
+  items: (
+    | string
+    | { key: string; value?: StorageValue; options?: TransactionOptions }
+  )[],
   commonOptions: TransactionOptions | undefined,
   operation: (batch: BatchItem) => Promise<any>
 ): Promise<any[]> {
-  const batches = new Map<string, BatchItem>()
+  const batches = new Map<string, BatchItem>();
 
   // Group items by mount point
   for (const item of items) {
-    const key = typeof item === "string" ? item : item.key
-    const mount = getMount(normalizeKey(key))
+    const key = typeof item === "string" ? item : item.key;
+    const mount = getMount(normalizeKey(key));
 
-    let batch = batches.get(mount.base)
+    let batch = batches.get(mount.base);
     if (!batch) {
-      batch = { driver: mount.driver, base: mount.base, items: [] }
-      batches.set(mount.base, batch)
+      batch = { driver: mount.driver, base: mount.base, items: [] };
+      batches.set(mount.base, batch);
     }
 
     batch.items.push({
       key,
       relativeKey: mount.relativeKey,
       value: typeof item === "string" ? undefined : item.value,
-      options: typeof item === "string" ? commonOptions :
-               { ...commonOptions, ...item.options }
-    })
+      options:
+        typeof item === "string"
+          ? commonOptions
+          : { ...commonOptions, ...item.options },
+    });
   }
 
   // Execute batched operations
-  return Promise.all([...batches.values()].map(operation)).then(r => r.flat())
+  return Promise.all([...batches.values()].map(operation)).then((r) =>
+    r.flat()
+  );
 }
 ```
 
@@ -329,11 +346,11 @@ function runBatch(
 ```typescript
 // Instead of:
 for (const key of keys) {
-  const value = await storage.getItem(key)  // N driver calls
+  const value = await storage.getItem(key); // N driver calls
 }
 
 // Use:
-const results = await storage.getItems(keys)  // 1 batched driver call per mount
+const results = await storage.getItems(keys); // 1 batched driver call per mount
 ```
 
 ## Real-Time Watching Infrastructure
@@ -344,24 +361,24 @@ The watching system provides real-time notifications for storage changes.
 
 ```typescript
 const onChange: WatchCallback = (event, key) => {
-  if (!context.watching) return
+  if (!context.watching) return;
 
-  key = normalizeKey(key)
+  key = normalizeKey(key);
   for (const listener of context.watchListeners) {
-    listener(event, key)
+    listener(event, key);
   }
-}
+};
 
 async function startWatch() {
-  if (context.watching) return
+  if (context.watching) return;
 
-  context.watching = true
+  context.watching = true;
   for (const mountpoint in context.mounts) {
     context.unwatch[mountpoint] = await watch(
       context.mounts[mountpoint],
       onChange,
       mountpoint
-    )
+    );
   }
 }
 ```
@@ -372,7 +389,7 @@ async function startWatch() {
 function watch(driver: Driver, onChange: WatchCallback, base: string): Unwatch {
   return driver.watch
     ? driver.watch((event, key) => onChange(event, base + key))
-    : () => {}  // No-op for drivers without watch support
+    : () => {}; // No-op for drivers without watch support
 }
 ```
 
@@ -402,33 +419,45 @@ async function runMigrations<T extends StorageValue>(
   storage: Storage<T>,
   options: CreateStorageOptions<T>
 ): Promise<void> {
-  const { version: targetVersion, migrations, migrationHooks } = options
+  const { version: targetVersion, migrations, migrationHooks } = options;
 
-  if (targetVersion === undefined || !migrations) return
+  if (targetVersion === undefined || !migrations) return;
 
   try {
     // Get current version
-    const currentVersion = (await storage.getItem(STORAGE_VERSION_KEY)) as number || 0
+    const currentVersion =
+      ((await storage.getItem(STORAGE_VERSION_KEY)) as number) || 0;
 
-    if (currentVersion >= targetVersion) return
+    if (currentVersion >= targetVersion) return;
 
     // Execute pre-migration hook
-    await migrationHooks?.beforeMigration?.(currentVersion, targetVersion, storage)
+    await migrationHooks?.beforeMigration?.(
+      currentVersion,
+      targetVersion,
+      storage
+    );
 
     // Run migrations sequentially
-    for (let version = currentVersion + 1; version <= targetVersion; version++) {
-      const migrationFn = migrations[version]
+    for (
+      let version = currentVersion + 1;
+      version <= targetVersion;
+      version++
+    ) {
+      const migrationFn = migrations[version];
       if (migrationFn) {
-        await migrationFn(storage)
+        await migrationFn(storage);
       }
     }
 
     // Update version
-    await storage._setItemInternal(STORAGE_VERSION_KEY, targetVersion)
+    await storage._setItemInternal(STORAGE_VERSION_KEY, targetVersion);
 
     // Execute post-migration hook
-    await migrationHooks?.afterMigration?.(currentVersion, targetVersion, storage)
-
+    await migrationHooks?.afterMigration?.(
+      currentVersion,
+      targetVersion,
+      storage
+    );
   } catch (error) {
     // Execute error hook
     await migrationHooks?.onMigrationError?.(
@@ -436,8 +465,8 @@ async function runMigrations<T extends StorageValue>(
       currentVersion,
       targetVersion,
       storage
-    )
-    throw error
+    );
+    throw error;
   }
 }
 ```
@@ -472,13 +501,13 @@ async dispose() {
 
 ```typescript
 async function stopWatch() {
-  if (!context.watching) return
+  if (!context.watching) return;
 
   for (const mountpoint in context.unwatch) {
-    await context.unwatch[mountpoint]?.()
+    await context.unwatch[mountpoint]?.();
   }
-  context.unwatch = {}
-  context.watching = false
+  context.unwatch = {};
+  context.watching = false;
 }
 ```
 
@@ -522,17 +551,17 @@ function asyncCall<T extends (...args: any) => any>(
   ...args: any[]
 ): Promise<Awaited<ReturnType<T>>> {
   try {
-    return wrapToPromise(fn(...args))
+    return wrapToPromise(fn(...args));
   } catch (error) {
-    return Promise.reject(error)
+    return Promise.reject(error);
   }
 }
 
 function wrapToPromise<T>(value: T): Promise<Awaited<T>> {
   if (!value || typeof (value as any).then !== "function") {
-    return Promise.resolve(value as Awaited<T>)
+    return Promise.resolve(value as Awaited<T>);
   }
-  return value as Promise<Awaited<T>>
+  return value as Promise<Awaited<T>>;
 }
 ```
 
@@ -541,7 +570,7 @@ function wrapToPromise<T>(value: T): Promise<Awaited<T>> {
 Mount points are kept sorted by length (descending) to ensure O(n) lookup performance with early termination:
 
 ```typescript
-context.mountpoints.sort((a, b) => b.length - a.length)
+context.mountpoints.sort((a, b) => b.length - a.length);
 ```
 
 ### Key Processing Optimization
@@ -551,8 +580,14 @@ Key normalization is optimized to minimize string operations:
 ```typescript
 // Single pass normalization with minimal allocations
 function normalizeKey(key?: string): string {
-  if (!key) return ""
-  return key.split("?")[0]?.replace(/[/\\]/g, ":").replace(/:+/g, ":").replace(/^:|:$/g, "") || ""
+  if (!key) return "";
+  return (
+    key
+      .split("?")[0]
+      ?.replace(/[/\\]/g, ":")
+      .replace(/:+/g, ":")
+      .replace(/^:|:$/g, "") || ""
+  );
 }
 ```
 

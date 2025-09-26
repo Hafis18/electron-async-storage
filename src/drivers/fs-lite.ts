@@ -7,6 +7,12 @@ import {
   readdirRecursive,
   rmRecursive,
   unlink,
+  syncReadFile,
+  syncWriteFile,
+  syncReaddirRecursive,
+  syncRmRecursive,
+  syncUnlink,
+  syncStat,
 } from "./utils/node-fs";
 
 export interface FSStorageOptions {
@@ -84,6 +90,50 @@ export default defineDriver((opts: FSStorageOptions = {}) => {
         return;
       }
       await rmRecursive(r("."));
+    },
+
+    // Synchronous methods
+    hasItemSync(key) {
+      return existsSync(r(key));
+    },
+    getItemSync(key) {
+      return syncReadFile(r(key), "utf8");
+    },
+    getItemRawSync(key) {
+      return syncReadFile(r(key));
+    },
+    getMetaSync(key) {
+      const stats = syncStat(r(key));
+      if (!stats) return null;
+      const { atime, mtime, size, birthtime, ctime } = stats;
+      return { atime, mtime, size, birthtime, ctime };
+    },
+    setItemSync(key, value) {
+      if (opts.readOnly) {
+        return;
+      }
+      return syncWriteFile(r(key), value, "utf8");
+    },
+    setItemRawSync(key, value) {
+      if (opts.readOnly) {
+        return;
+      }
+      return syncWriteFile(r(key), value);
+    },
+    removeItemSync(key) {
+      if (opts.readOnly) {
+        return;
+      }
+      return syncUnlink(r(key));
+    },
+    getKeysSync(_base, topts) {
+      return syncReaddirRecursive(r("."), opts.ignore, topts?.maxDepth);
+    },
+    clearSync() {
+      if (opts.readOnly || opts.noClear) {
+        return;
+      }
+      syncRmRecursive(r("."));
     },
   };
 });
