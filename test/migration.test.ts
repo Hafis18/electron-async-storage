@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { createStorage } from "../src";
 import memory from "../src/drivers/memory";
+import fs from "../src/drivers/fs";
+import queue from "../src/drivers/queue";
+import { resolve } from "node:path";
+import { rmSync, existsSync } from "node:fs";
 
 describe("storage migration", () => {
   let storage: any;
@@ -191,5 +195,227 @@ describe("storage migration", () => {
       age: 25,
       email: "jane@example.com",
     });
+  });
+
+  it("should be able to read keys with getKeysSync after migration", async () => {
+    const STORAGES = {
+      APP_THEME_STATE: "app:theme:state",
+      APP_WINDOWS: (id: string) => `app:windows:${id}`,
+      APP_I18N_LOCALE: "app:i18n:locale",
+    };
+
+    storage = createStorage({
+      driver: memory(),
+      version: 1,
+      migrations: {
+        1: async (s) => {
+          // init theme state
+          const currentThemeState = await s.getItem(STORAGES.APP_THEME_STATE);
+          if (currentThemeState == null) {
+            await s.setItem(STORAGES.APP_THEME_STATE, {
+              theme: "system",
+              shouldUseDarkColors: false,
+            });
+          }
+
+          // init main window state
+          const mainWindowState = await s.getItem(STORAGES.APP_WINDOWS("main"));
+          if (mainWindowState == null) {
+            await s.setItem(STORAGES.APP_WINDOWS("main"), {
+              type: "main",
+              windowId: "main",
+              tabs: [
+                {
+                  id: "welcome-tab",
+                  isActive: true,
+                  name: "Welcome",
+                  pinned: false,
+                  url: "/welcome",
+                },
+              ],
+            });
+          }
+
+          // init locale state
+          const localeState = await s.getItem(STORAGES.APP_I18N_LOCALE);
+          if (localeState == null) {
+            await s.setItem(STORAGES.APP_I18N_LOCALE, "en");
+          }
+        },
+      },
+    });
+
+    await storage.migrate();
+
+    // Test getKeysSync can read the key set during migration
+    const windowKeys = storage.getKeysSync("app:windows");
+    expect(windowKeys).toHaveLength(1);
+    expect(windowKeys).toContain("app:windows:main");
+
+    // Verify the data is actually there
+    const mainWindowState = await storage.getItem("app:windows:main");
+    expect(mainWindowState).toBeDefined();
+    expect(mainWindowState).toHaveProperty("windowId", "main");
+    expect(mainWindowState).toHaveProperty("tabs");
+    expect((mainWindowState as any).tabs).toHaveLength(1);
+  });
+
+  it("should be able to read keys with getKeysSync after migration (with fs driver)", async () => {
+    const dir = resolve(__dirname, "tmp/migration-fs");
+
+    // Clean up before test
+    if (existsSync(dir)) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+
+    const STORAGES = {
+      APP_THEME_STATE: "app:theme:state",
+      APP_WINDOWS: (id: string) => `app:windows:${id}`,
+      APP_I18N_LOCALE: "app:i18n:locale",
+    };
+
+    storage = createStorage({
+      driver: fs({ base: dir }),
+      version: 1,
+      migrations: {
+        1: async (s) => {
+          // init theme state
+          const currentThemeState = await s.getItem(STORAGES.APP_THEME_STATE);
+          if (currentThemeState == null) {
+            await s.setItem(STORAGES.APP_THEME_STATE, {
+              theme: "system",
+              shouldUseDarkColors: false,
+            });
+          }
+
+          // init main window state
+          const mainWindowState = await s.getItem(STORAGES.APP_WINDOWS("main"));
+          if (mainWindowState == null) {
+            await s.setItem(STORAGES.APP_WINDOWS("main"), {
+              type: "main",
+              windowId: "main",
+              tabs: [
+                {
+                  id: "welcome-tab",
+                  isActive: true,
+                  name: "Welcome",
+                  pinned: false,
+                  url: "/welcome",
+                },
+              ],
+            });
+          }
+
+          // init locale state
+          const localeState = await s.getItem(STORAGES.APP_I18N_LOCALE);
+          if (localeState == null) {
+            await s.setItem(STORAGES.APP_I18N_LOCALE, "en");
+          }
+        },
+      },
+    });
+
+    await storage.migrate();
+
+    // Test getKeysSync can read the key set during migration
+    const windowKeys = storage.getKeysSync("app:windows");
+    expect(windowKeys).toHaveLength(1);
+    expect(windowKeys).toContain("app:windows:main");
+
+    // Verify the data is actually there
+    const mainWindowState = await storage.getItem("app:windows:main");
+    expect(mainWindowState).toBeDefined();
+    expect(mainWindowState).toHaveProperty("windowId", "main");
+    expect(mainWindowState).toHaveProperty("tabs");
+    expect((mainWindowState as any).tabs).toHaveLength(1);
+
+    // Clean up after test
+    if (existsSync(dir)) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("should be able to read keys with getKeysSync after migration (with queue + fs driver)", async () => {
+    const dir = resolve(__dirname, "tmp/migration-queue-fs");
+
+    // Clean up before test
+    if (existsSync(dir)) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+
+    const STORAGES = {
+      APP_THEME_STATE: "app:theme:state",
+      APP_WINDOWS: (id: string) => `app:windows:${id}`,
+      APP_I18N_LOCALE: "app:i18n:locale",
+    };
+
+    storage = createStorage({
+      driver: queue({
+        batchSize: 3,
+        flushInterval: 1000,
+        maxQueueSize: 1000,
+        mergeUpdates: true,
+        driver: fs({ base: dir }),
+      }),
+      version: 1,
+      migrations: {
+        1: async (s) => {
+          // init theme state
+          const currentThemeState = await s.getItem(STORAGES.APP_THEME_STATE);
+          if (currentThemeState == null) {
+            await s.setItem(STORAGES.APP_THEME_STATE, {
+              theme: "system",
+              shouldUseDarkColors: false,
+            });
+          }
+
+          // init main window state
+          const mainWindowState = await s.getItem(STORAGES.APP_WINDOWS("main"));
+          if (mainWindowState == null) {
+            await s.setItem(STORAGES.APP_WINDOWS("main"), {
+              type: "main",
+              windowId: "main",
+              tabs: [
+                {
+                  id: "welcome-tab",
+                  isActive: true,
+                  name: "Welcome",
+                  pinned: false,
+                  url: "/welcome",
+                },
+              ],
+            });
+          }
+
+          // init locale state
+          const localeState = await s.getItem(STORAGES.APP_I18N_LOCALE);
+          if (localeState == null) {
+            await s.setItem(STORAGES.APP_I18N_LOCALE, "en");
+          }
+        },
+      },
+    });
+
+    await storage.migrate();
+
+    // Flush queue to ensure all operations are written to fs
+    await storage.flush();
+
+    // Test getKeysSync can read the key set during migration
+    const windowKeys = storage.getKeysSync("app:windows");
+    expect(windowKeys).toHaveLength(1);
+    expect(windowKeys).toContain("app:windows:main");
+
+    // Verify the data is actually there
+    const mainWindowState = await storage.getItem("app:windows:main");
+    expect(mainWindowState).toBeDefined();
+    expect(mainWindowState).toHaveProperty("windowId", "main");
+    expect(mainWindowState).toHaveProperty("tabs");
+    expect((mainWindowState as any).tabs).toHaveLength(1);
+
+    // Clean up after test
+    if (existsSync(dir)) {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

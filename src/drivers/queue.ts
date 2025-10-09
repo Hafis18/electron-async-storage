@@ -23,6 +23,7 @@ interface QueueContext {
   flushTimer?: NodeJS.Timeout;
   flushing: boolean;
   disposed: boolean;
+  pendingFlush?: Promise<void>;
 }
 
 export interface QueueDriverOptions extends QueueOptions {
@@ -58,13 +59,20 @@ export default defineDriver<QueueDriverOptions, QueueContext>((opts) => {
   };
 
   const flushQueue = async () => {
-    if (context.flushing || context.queue.size === 0 || context.disposed) {
+    if (context.disposed) {
+      return;
+    }
+    // If already flushing, return the pending flush promise so callers can await it
+    if (context.flushing) {
+      return context.pendingFlush;
+    }
+    if (context.queue.size === 0) {
       return;
     }
 
     context.flushing = true;
 
-    try {
+    const flushPromise = (async () => {
       const operations = [...context.queue.values()].sort(
         (a, b) => a.timestamp - b.timestamp
       );
@@ -91,14 +99,26 @@ export default defineDriver<QueueDriverOptions, QueueContext>((opts) => {
           setOperations.length > 1 &&
           setOperations.every((op) => !op.isRaw)
         ) {
-          // Only use batch operation for non-raw values
-          await driver.setItems(
-            setOperations.map((op) => ({
-              key: op.key,
-              value: op.value,
-              options: op.options,
-            }))
-          );
+          // Try batch operation, fall back to per-item writes if it fails
+          try {
+            await driver.setItems(
+              setOperations.map((op) => ({
+                key: op.key,
+                value: op.value,
+                options: op.options,
+              }))
+            );
+          } catch {
+            // Fallback to per-item writes
+            await Promise.all(
+              setOperations.map((op) => {
+                if (op.isRaw && driver.setItemRaw) {
+                  return driver.setItemRaw(op.key, op.value, op.options || {});
+                }
+                return driver.setItem?.(op.key, op.value, op.options || {});
+              })
+            );
+          }
         } else {
           await Promise.all(
             setOperations.map((op) => {
@@ -118,13 +138,17 @@ export default defineDriver<QueueDriverOptions, QueueContext>((opts) => {
           )
         );
       }
-    } finally {
+    })().finally(() => {
       context.flushing = false;
+      context.pendingFlush = undefined;
 
       if (context.queue.size > 0 && !context.disposed) {
         scheduleFlush();
       }
-    }
+    });
+
+    context.pendingFlush = flushPromise;
+    return flushPromise;
   };
 
   const flushQueueSync = () => {
@@ -280,7 +304,7 @@ export default defineDriver<QueueDriverOptions, QueueContext>((opts) => {
     },
 
     setItems(items, commonOptions = {}) {
-      if (!driver.setItem) {
+      if (!driver.setItem && !driver.setItems) {
         return;
       }
 

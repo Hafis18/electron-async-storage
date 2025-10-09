@@ -564,10 +564,7 @@ await storage.flush();
 // Now all operations are written to disk
 
 // Flush only a specific mount point
-storage.mount(
-  "logs",
-  queueDriver({ driver: fsDriver({ base: "./logs" }) })
-);
+storage.mount("logs", queueDriver({ driver: fsDriver({ base: "./logs" }) }));
 await storage.setItem("logs:error", errorData);
 await storage.flush("logs"); // Only flush the logs mount
 ```
