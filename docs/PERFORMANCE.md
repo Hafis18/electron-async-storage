@@ -201,8 +201,7 @@ const configStorage = createStorage({
 });
 
 // Manual flush control for critical operations
-const queueContext = loggingStorage.getMount().driver.getInstance();
-await flushQueue(queueContext); // Force immediate flush
+await storage.flush(); // Force immediate flush using standard API
 ```
 
 ## Batch Operations
@@ -405,13 +404,8 @@ class QueueMonitor {
   }
 
   async forceFlush() {
-    const mount = this.storage.getMount();
-    const queueContext = mount.driver.getInstance();
-
-    // Access private flush method if available
-    if ("flushQueue" in mount.driver) {
-      await (mount.driver as any).flushQueue();
-    }
+    // Use the standard flush API
+    await this.storage.flush();
   }
 }
 

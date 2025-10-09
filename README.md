@@ -179,6 +179,7 @@ interface Storage<T extends StorageValue = StorageValue> {
   watch(callback: WatchCallback): Promise<Unwatch>;
   migrate(): Promise<void>;
   dispose(): Promise<void>;
+  flush(base?: string): Promise<void>; // Manually flush queued operations
 
   // Aliases (Async)
   keys: typeof getKeys;
@@ -195,6 +196,7 @@ interface Storage<T extends StorageValue = StorageValue> {
   hasSync: typeof hasItemSync;
   delSync: typeof removeItemSync;
   removeSync: typeof removeItemSync;
+  flushSync(base?: string): void; // Synchronously flush queued operations
 }
 ```
 

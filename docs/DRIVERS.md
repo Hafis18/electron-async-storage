@@ -453,6 +453,7 @@ interface QueueContext {
 - **Automatic Batching**: Groups operations for efficiency
 - **Smart Merging**: Combines duplicate key operations
 - **Overflow Protection**: Auto-flush on queue size limits
+- **Manual Flush Control**: `flush()` and `flushSync()` methods for immediate persistence
 - **Order Preservation**: Maintains operation chronology
 - **Graceful Degradation**: Transparent fallback for unsupported operations
 
@@ -511,10 +512,47 @@ const flushQueue = async () => {
 
 #### Advanced Usage Patterns
 
+##### Manual Flush Control
+
+The queue driver supports manual flushing for critical operations:
+
 ```typescript
 import queueDriver from "electron-async-storage/drivers/queue";
 import fsDriver from "electron-async-storage/drivers/fs";
 
+const storage = createStorage({
+  driver: queueDriver({
+    driver: fsDriver({ base: "./data" }),
+    batchSize: 100,
+    flushInterval: 5000, // Auto-flush every 5 seconds
+  }),
+});
+
+// Queue multiple operations
+await storage.setItem("user:profile", userData);
+await storage.setItem("user:settings", settingsData);
+await storage.setItem("user:preferences", prefsData);
+
+// Operations are queued, not yet persisted
+
+// Force immediate flush before critical operation
+await storage.flush();
+// All queued operations are now persisted to disk
+
+// Synchronous flush option (requires driver sync support)
+storage.setItemSync("critical-config", configData);
+storage.flushSync(); // Blocks until persisted
+
+// Before app exit - ensure all data is saved
+process.on("beforeExit", async () => {
+  await storage.flush();
+  await storage.dispose();
+});
+```
+
+##### High-Throughput Logging
+
+```typescript
 // High-throughput logging
 const loggingStorage = createStorage({
   driver: queueDriver({
@@ -525,6 +563,18 @@ const loggingStorage = createStorage({
   }),
 });
 
+// Log many events quickly
+for (let i = 0; i < 10000; i++) {
+  await loggingStorage.setItem(`event:${i}`, eventData);
+}
+
+// Manually flush when reaching checkpoint
+await loggingStorage.flush();
+```
+
+##### Real-Time User Preferences
+
+```typescript
 // Real-time user preferences
 const prefsStorage = createStorage({
   driver: queueDriver({
@@ -534,7 +584,11 @@ const prefsStorage = createStorage({
     mergeUpdates: false, // Preserve all updates
   }),
 });
+```
 
+##### Performance Monitoring
+
+```typescript
 // Performance monitoring
 const queueContext = loggingStorage.getMount().driver.getInstance();
 console.log("Queue size:", queueContext.queue.size);

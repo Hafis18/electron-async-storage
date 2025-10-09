@@ -516,6 +516,72 @@ process.on("beforeExit", async () => {
 });
 ```
 
+##### flush
+
+Manually flushes queued operations to the underlying storage.
+
+```typescript
+flush(base?: string): Promise<void>
+```
+
+**Parameters:**
+
+- `base`: Optional mount base path to flush only a specific mount point
+
+**Description:**
+
+The `flush()` method is primarily used with the queue driver to force immediate persistence of queued operations. For drivers that don't support flushing (like memory or fs drivers), this method is a no-op.
+
+**Common Use Cases:**
+
+- Before critical operations that require data consistency
+- Before application shutdown to ensure all pending writes are persisted
+- After batch operations when immediate persistence is needed
+- In test scenarios to ensure deterministic state
+
+**Example:**
+
+```typescript
+import queueDriver from "electron-async-storage/drivers/queue";
+import fsDriver from "electron-async-storage/drivers/fs";
+
+const storage = createStorage({
+  driver: queueDriver({
+    driver: fsDriver({ base: "./data" }),
+    flushInterval: 5000,
+  }),
+});
+
+// Queue multiple operations
+await storage.setItem("key1", "value1");
+await storage.setItem("key2", "value2");
+await storage.setItem("key3", "value3");
+
+// Operations are queued, not yet persisted
+
+// Manually flush to ensure immediate persistence
+await storage.flush();
+// Now all operations are written to disk
+
+// Flush only a specific mount point
+storage.mount(
+  "logs",
+  queueDriver({ driver: fsDriver({ base: "./logs" }) })
+);
+await storage.setItem("logs:error", errorData);
+await storage.flush("logs"); // Only flush the logs mount
+```
+
+**Before App Exit:**
+
+```typescript
+// Ensure all queued operations are persisted before exit
+process.on("beforeExit", async () => {
+  await storage.flush();
+  await storage.dispose();
+});
+```
+
 ### Synchronous API
 
 The library provides synchronous counterparts to all async operations for scenarios where blocking operations are preferred or needed. Synchronous methods offer better performance for simple operations and eliminate Promise overhead.
@@ -772,6 +838,91 @@ storage.clearSync("cache:");
 
 // Clear everything
 storage.clearSync();
+```
+
+##### flushSync
+
+Synchronously flushes queued operations to the underlying storage.
+
+```typescript
+flushSync(base?: string): void
+```
+
+**Parameters:**
+
+- `base`: Optional mount base path to flush only a specific mount point
+
+**Description:**
+
+The `flushSync()` method provides a synchronous way to flush queued operations. This is primarily used with the queue driver when you need to ensure operations are persisted immediately in a synchronous code path. The underlying driver must support synchronous operations for this to work.
+
+**Important Notes:**
+
+- Requires the underlying driver to support synchronous methods (`setItemSync`, `removeItemSync`)
+- For drivers without sync support, this will throw an error
+- Blocks execution until all queued operations are written
+- Use sparingly in performance-critical paths due to blocking nature
+
+**Common Use Cases:**
+
+- Configuration file updates that must be persisted immediately
+- Test scenarios requiring deterministic state
+- Synchronous initialization code where async/await is not available
+- Critical data updates in synchronous event handlers
+
+**Example:**
+
+```typescript
+import queueDriver from "electron-async-storage/drivers/queue";
+import fsDriver from "electron-async-storage/drivers/fs";
+
+const storage = createStorage({
+  driver: queueDriver({
+    driver: fsDriver({ base: "./config" }),
+    flushInterval: 5000,
+  }),
+});
+
+// Queue synchronous operations
+storage.setItemSync("theme", "dark");
+storage.setItemSync("language", "en");
+storage.setItemSync("notifications", true);
+
+// Operations are queued
+
+// Synchronously flush to ensure immediate persistence
+storage.flushSync();
+// Now all operations are written to disk synchronously
+
+// Use in initialization code
+function initializeConfig() {
+  const defaultConfig = {
+    theme: "light",
+    language: "en",
+    notifications: true,
+  };
+
+  storage.setItemSync("config", defaultConfig);
+  storage.flushSync(); // Ensure config is persisted before continuing
+
+  return defaultConfig;
+}
+```
+
+**Performance Consideration:**
+
+```typescript
+// ⚠️ Avoid in loops - can be very slow
+for (let i = 0; i < 1000; i++) {
+  storage.setItemSync(`item:${i}`, data[i]);
+  storage.flushSync(); // Bad: 1000 blocking flushes!
+}
+
+// ✅ Better: Flush once after all operations
+for (let i = 0; i < 1000; i++) {
+  storage.setItemSync(`item:${i}`, data[i]);
+}
+storage.flushSync(); // Good: Single flush at end
 ```
 
 #### Sync Aliases

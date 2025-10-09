@@ -76,6 +76,8 @@ export interface Driver<OptionsT = any, InstanceT = any> {
   clear?: (base: string, opts: TransactionOptions) => MaybePromise<void>;
   dispose?: () => MaybePromise<void>;
   watch?: (callback: WatchCallback) => MaybePromise<Unwatch>;
+  flush?: () => MaybePromise<void>;
+  flushSync?: () => void;
 
   // Synchronous API methods
   hasItemSync?: (key: string, opts: TransactionOptions) => boolean;
@@ -277,6 +279,7 @@ export interface Storage<T extends StorageValue = StorageValue> {
   dispose: () => Promise<void>;
   watch: (callback: WatchCallback) => Promise<Unwatch>;
   unwatch: () => Promise<void>;
+  flush: (base?: string) => Promise<void>;
   // Mount
   mount: (base: string, driver: Driver) => Storage;
   unmount: (base: string, dispose?: boolean) => Promise<void>;
@@ -411,6 +414,7 @@ export interface Storage<T extends StorageValue = StorageValue> {
 
   // Utils - sync version
   clearSync: (base?: string, opts?: TransactionOptions) => void;
+  flushSync: (base?: string) => void;
 
   // Sync aliases
   keysSync: Storage["getKeysSync"];

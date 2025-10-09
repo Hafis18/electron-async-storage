@@ -235,5 +235,93 @@ describe("drivers: queue", () => {
 
       expect(keys).toEqual(["queued_key"]);
     });
+
+    it("should manually flush the queue when flush is called", async () => {
+      await storage.setItem("key1", "value1");
+      await storage.setItem("key2", "value2");
+
+      expect(mockDriver.setItem).not.toHaveBeenCalled();
+
+      await storage.flush();
+
+      // Check if batch operations were used or individual calls
+      if (mockDriver.setItems.mock.calls.length > 0) {
+        expect(mockDriver.setItems).toHaveBeenCalledWith([
+          { key: "key1", value: stringify("value1"), options: {} },
+          { key: "key2", value: stringify("value2"), options: {} },
+        ]);
+      } else {
+        expect(mockDriver.setItem).toHaveBeenCalledWith(
+          "key1",
+          stringify("value1"),
+          {}
+        );
+        expect(mockDriver.setItem).toHaveBeenCalledWith(
+          "key2",
+          stringify("value2"),
+          {}
+        );
+      }
+
+      // Queue should be empty after flush
+      const mount = storage.getMount();
+      const context = mount.driver.getInstance?.();
+      expect(context?.queue.size).toBe(0);
+    });
+
+    it("should manually flush the queue synchronously when flushSync is called", async () => {
+      // Create a new storage with a driver that supports sync methods
+      const syncMockDriver = {
+        hasItem: vi.fn(),
+        getItem: vi.fn(),
+        setItem: vi.fn(),
+        setItems: vi.fn(),
+        removeItem: vi.fn(),
+        getKeys: vi.fn().mockResolvedValue([]),
+        dispose: vi.fn(),
+        setItemSync: vi.fn(),
+        removeItemSync: vi.fn(),
+      };
+
+      const syncStorage = createStorage({
+        driver: queueDriver({
+          driver: syncMockDriver,
+          batchSize: 10, // Use a larger batch size to avoid auto-flush
+          flushInterval: 10_000,
+          mergeUpdates: true,
+        }),
+      });
+
+      await syncStorage.setItem("key1", "value1");
+      await syncStorage.setItem("key2", "value2");
+      await syncStorage.removeItem("key3");
+
+      // Verify queue has items before flush
+      const mountBeforeFlush = syncStorage.getMount();
+      const contextBeforeFlush = mountBeforeFlush.driver.getInstance?.();
+      expect(contextBeforeFlush?.queue.size).toBe(3);
+
+      expect(syncMockDriver.setItem).not.toHaveBeenCalled();
+      expect(syncMockDriver.setItemSync).not.toHaveBeenCalled();
+
+      syncStorage.flushSync();
+
+      expect(syncMockDriver.setItemSync).toHaveBeenCalledWith(
+        "key1",
+        stringify("value1"),
+        {}
+      );
+      expect(syncMockDriver.setItemSync).toHaveBeenCalledWith(
+        "key2",
+        stringify("value2"),
+        {}
+      );
+      expect(syncMockDriver.removeItemSync).toHaveBeenCalledWith("key3", {});
+
+      // Queue should be empty after flush
+      const mount = syncStorage.getMount();
+      const context = mount.driver.getInstance?.();
+      expect(context?.queue.size).toBe(0);
+    });
   });
 });

@@ -752,6 +752,26 @@ export function createStorage<T extends StorageValue>(
       }
     },
 
+    // Flush
+    async flush(base) {
+      base = normalizeBaseKey(base);
+      await Promise.all(
+        getMounts(base, false).map(async (m) => {
+          if (m.driver.flush) {
+            return asyncCall(m.driver.flush);
+          }
+        })
+      );
+    },
+    flushSync(base) {
+      base = normalizeBaseKey(base);
+      for (const m of getMounts(base, false)) {
+        if (m.driver.flushSync) {
+          syncCall(m.driver.flushSync);
+        }
+      }
+    },
+
     // Aliases
     keys: (base, opts = {}) => storage.getKeys(base, opts),
     get: (key: string, opts = {}) => storage.getItem(key, opts),

@@ -127,6 +127,45 @@ export default defineDriver<QueueDriverOptions, QueueContext>((opts) => {
     }
   };
 
+  const flushQueueSync = () => {
+    if (context.flushing || context.queue.size === 0 || context.disposed) {
+      return;
+    }
+
+    // Clear any pending flush timer
+    if (context.flushTimer) {
+      clearTimeout(context.flushTimer);
+      context.flushTimer = undefined;
+    }
+
+    context.flushing = true;
+
+    try {
+      const operations = [...context.queue.values()].sort(
+        (a, b) => a.timestamp - b.timestamp
+      );
+      context.queue.clear();
+
+      for (const op of operations) {
+        if (op.type === "set" && op.value !== undefined) {
+          if (op.isRaw && driver.setItemRawSync) {
+            driver.setItemRawSync(op.key, op.value, op.options || {});
+          } else if (driver.setItemSync) {
+            driver.setItemSync(op.key, op.value, op.options || {});
+          }
+        } else if (op.type === "remove" && driver.removeItemSync) {
+          driver.removeItemSync(op.key, op.options || {});
+        }
+      }
+    } finally {
+      context.flushing = false;
+
+      if (context.queue.size > 0 && !context.disposed) {
+        scheduleFlush();
+      }
+    }
+  };
+
   const queueOperation = (operation: QueuedOperation) => {
     if (context.disposed) {
       return;
@@ -334,6 +373,14 @@ export default defineDriver<QueueDriverOptions, QueueContext>((opts) => {
 
     watch(callback: WatchCallback): Promise<Unwatch> | Unwatch {
       return driver.watch ? driver.watch(callback) : () => {};
+    },
+
+    flush() {
+      return flushQueue();
+    },
+
+    flushSync() {
+      return flushQueueSync();
     },
 
     // Synchronous methods - flush queue first then call underlying driver
